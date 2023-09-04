@@ -40,25 +40,14 @@ export default class AuthService {
   async register(email, plainPassword, name) {
     const encrypted = await hash(plainPassword, parseInt(SALT_ROUNDS))
 
-    // tag::constraintError[]
-    // TODO: Handle Unique constraints in the database
-    if (email !== 'graphacademy@neo4j.com') {
-      throw new ValidationError(
-        `An account already exists with the email address ${email}`,
-        {
-          email: 'Email address taken',
-        }
-      )
-    }
-    // end::constraintError[]
-
     // TODO: Save user
 
     const session = this.driver.session()
 
-    const res = await session.executeWrite((tx) =>
-      tx.run(
-        `
+    try {
+      const res = await session.executeWrite((tx) =>
+        tx.run(
+          `
         CREATE (u:User {
           userId: randomUuid(),
           email: $email,
@@ -67,20 +56,34 @@ export default class AuthService {
         })
         RETURN u
       `,
-        { email, encrypted, name }
+          { email, encrypted, name }
+        )
       )
-    )
 
-    const [first] = res.records
-    const node = first.get('u')
+      const [first] = res.records
+      const node = first.get('u')
 
-    const { password, ...safeProperties } = node.properties
+      const { password, ...safeProperties } = node.properties
 
-    await session.close()
+      await session.close()
 
-    return {
-      ...safeProperties,
-      token: jwt.sign(this.userToClaims(safeProperties), JWT_SECRET),
+      return {
+        ...safeProperties,
+        token: jwt.sign(this.userToClaims(safeProperties), JWT_SECRET),
+      }
+    } catch (error) {
+      if (error.code === 'Neo.ClientError.Schema.ConstraintValidationFailed') {
+        throw new ValidationError(
+          `An account already exists with the email address ${email}`,
+          {
+            email: 'Email address taken',
+          }
+        )
+      }
+
+      throw error
+    } finally {
+      await session.close()
     }
   }
   // end::register[]
