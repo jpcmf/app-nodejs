@@ -39,27 +39,38 @@ export default class MovieService {
    * @returns {Promise<Record<string, any>[]>}
    */
   // tag::all[]
-  async all(sort = 'title', order = 'ASC', limit = 6, skip = 0, userId = undefined) {
+  async all(
+    sort = 'title',
+    order = 'ASC',
+    limit = 6,
+    skip = 0,
+    userId = undefined
+  ) {
     // TODO: Open an Session
     const session = this.driver.session()
 
     // TODO: Execute a query in a new Read Transaction
     // Execute a query in a new Read Transaction
-const res = await session.executeRead(
-  tx => tx.run(
-    `
+    const res = await session.executeRead(async (tx) => {
+      const favorites = await this.getUserFavorites(tx, userId)
+
+      return tx.run(
+        `
       MATCH (m:Movie)
       WHERE m.\`${sort}\` IS NOT NULL
       RETURN m {
-        .*
+        .*,
+        favorite: m.tmdbId IN $favorites
       } AS movie
       ORDER BY m.\`${sort}\` ${order}
       SKIP $skip
       LIMIT $limit
-    `, { skip: int(skip), limit: int(limit) })
-)
+    `,
+        { skip: int(skip), limit: int(limit), favorites }
+      )
+    })
     // TODO: Get a list of Movies from the Result
-    const movies = res.records.map(row => toNativeTypes(row.get('movie')))
+    const movies = res.records.map((row) => toNativeTypes(row.get('movie')))
 
     // TODO: Close the session
     await session.close()
@@ -90,7 +101,14 @@ const res = await session.executeRead(
    * @returns {Promise<Record<string, any>[]>}
    */
   // tag::getByGenre[]
-  async getByGenre(name, sort = 'title', order = 'ASC', limit = 6, skip = 0, userId = undefined) {
+  async getByGenre(
+    name,
+    sort = 'title',
+    order = 'ASC',
+    limit = 6,
+    skip = 0,
+    userId = undefined
+  ) {
     // TODO: Get Movies in a Genre
     // MATCH (m:Movie)-[:IN_GENRE]->(:Genre {name: $name})
 
@@ -120,7 +138,14 @@ const res = await session.executeRead(
    * @returns {Promise<Record<string, any>[]>}
    */
   // tag::getForActor[]
-  async getForActor(id, sort = 'title', order = 'ASC', limit = 6, skip = 0, userId = undefined) {
+  async getForActor(
+    id,
+    sort = 'title',
+    order = 'ASC',
+    limit = 6,
+    skip = 0,
+    userId = undefined
+  ) {
     // TODO: Get Movies acted in by a Person
     // MATCH (:Person {tmdbId: $id})-[:ACTED_IN]->(m:Movie)
 
@@ -150,7 +175,14 @@ const res = await session.executeRead(
    * @returns {Promise<Record<string, any>[]>}
    */
   // tag::getForDirector[]
-  async getForDirector(id, sort = 'title', order = 'ASC', limit = 6, skip = 0, userId = undefined) {
+  async getForDirector(
+    id,
+    sort = 'title',
+    order = 'ASC',
+    limit = 6,
+    skip = 0,
+    userId = undefined
+  ) {
     // TODO: Get Movies directed by a Person
     // MATCH (:Person {tmdbId: $id})-[:DIRECTED]->(m:Movie)
 
@@ -204,11 +236,10 @@ const res = await session.executeRead(
   async getSimilarMovies(id, limit = 6, skip = 0, userId = undefined) {
     // TODO: Get similar movies based on genres or ratings
 
-    return popular.slice(skip, skip + limit)
-      .map(item => ({
-        ...item,
-        score: (Math.random() * 100).toFixed(2)
-      }))
+    return popular.slice(skip, skip + limit).map((item) => ({
+      ...item,
+      score: (Math.random() * 100).toFixed(2),
+    }))
   }
   // end::getSimilarMovies[]
 
@@ -223,8 +254,21 @@ const res = await session.executeRead(
    */
   // tag::getUserFavorites[]
   async getUserFavorites(tx, userId) {
-    return []
+    // If userId is not defined, return an empty array
+    if (userId === undefined) {
+      return []
+    }
+
+    const favoriteResult = await tx.run(
+      `
+      MATCH (:User {userId: $userId})-[:HAS_FAVORITE]->(m)
+      RETURN m.tmdbId AS id
+    `,
+      { userId }
+    )
+
+    // Extract the `id` value returned by the cypher query
+    return favoriteResult.records.map((record) => record.get('id'))
   }
   // end::getUserFavorites[]
-
 }
