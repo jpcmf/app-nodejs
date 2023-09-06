@@ -1,6 +1,5 @@
 import jwt from 'jsonwebtoken'
 import { hash, compare } from 'bcrypt'
-import { user } from '../../test/fixtures/users.js'
 import ValidationError from '../errors/validation.error.js'
 import { JWT_SECRET, SALT_ROUNDS } from '../constants.js'
 
@@ -111,19 +110,39 @@ export default class AuthService {
   // tag::authenticate[]
   async authenticate(email, unencryptedPassword) {
     // TODO: Authenticate the user from the database
-    if (
-      email === 'graphacademy@neo4j.com' &&
-      unencryptedPassword === 'letmein'
-    ) {
-      const { password, ...claims } = user.properties
 
-      return {
-        ...claims,
-        token: jwt.sign(claims, JWT_SECRET),
-      }
+    // Open a new session
+    const session = this.driver.session()
+
+    // Find the user node within a Read Transaction
+    const res = await session.executeRead((tx) =>
+      tx.run('MATCH (u:User {email: $email}) RETURN u', { email })
+    )
+
+    // Close the session
+    await session.close()
+
+    // Verify the user exists
+    if (res.records.length === 0) {
+      return false
     }
 
-    return false
+    // Compare passwords
+    const user = res.records[0].get('u')
+    const encryptedPassword = user.properties.password
+
+    const correct = await compare(unencryptedPassword, encryptedPassword)
+
+    if (correct === false) {
+      return false
+    }
+
+    const { password, ...safeProperties } = user.properties
+
+    return {
+      ...safeProperties,
+      token: jwt.sign(this.userToClaims(safeProperties), JWT_SECRET),
+    }
   }
   // end::authenticate[]
 
