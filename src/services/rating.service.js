@@ -1,4 +1,3 @@
-import { goodfellas } from '../../test/fixtures/movies.js'
 import { ratings } from '../../test/fixtures/ratings.js'
 import NotFoundError from '../errors/not-found.error.js'
 import { toNativeTypes } from '../utils.js'
